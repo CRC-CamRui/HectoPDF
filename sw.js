@@ -1,6 +1,6 @@
 // Guarda la app en el celular para que funcione sin internet.
 // Al publicar cambios, sube el número de versión para que el celular descargue la nueva.
-const VERSION = 'cuentas-v1';
+const VERSION = 'cuentas-v2';
 const ARCHIVOS = ['./', 'index.html', 'manifest.json', 'jspdf.umd.min.js', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {

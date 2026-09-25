@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cuentas de cobro</title>
+<meta name="theme-color" content="#1F3A93">
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Cuentas">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<script src="jspdf.umd.min.js"></script>
+<style>
+  :root {
+    --tinta: #1F3A93;        /* azul de bolígrafo: acento y trazo de la firma */
+    --tinta-suave: #E7ECF8;
+    --texto: #1C2430;
+    --apagado: #5B6573;
+    --linea: #CDD4DF;
+    --fondo: #EEF1F5;
+    --papel: #FFFFFF;
+    --error: #B42318;
+    --ok: #146C43;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  *, *::before, *::after { box-sizing: inherit; }
+  html { -webkit-text-size-adjust: 100%; scroll-padding-bottom: 6.5rem; scroll-padding-top: 1rem; }
+  body {
+    margin: 0; background: var(--fondo); color: var(--texto);
+    font: 17px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  main { max-width: 34rem; margin: 0 auto; padding: 1rem 1rem 7.5rem; }
+
+  header.barra {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    max-width: 34rem; margin: 0 auto; padding: 1rem 1rem .25rem;
+  }
+  header.barra h1 { font-size: 1.35rem; margin: 0; letter-spacing: -.01em; }
+  header.barra p { margin: 0; color: var(--apagado); font-size: .9rem; }
+
+  section.hoja {
+    background: var(--papel); border: 1px solid var(--linea); border-radius: 14px;
+    padding: 1.1rem 1rem 1.25rem; margin-top: 1rem;
+  }
+  section.hoja > h2 { font-size: 1.05rem; margin: 0 0 .85rem; }
+  .ayuda { color: var(--apagado); font-size: .9rem; margin: -.5rem 0 .9rem; }
+
+  label.campo { display: block; margin-bottom: .9rem; }
+  label.campo > span { display: block; font-size: .92rem; font-weight: 600; margin-bottom: .3rem; }
+  input, select, textarea {
+    width: 100%; font: inherit; color: inherit; background: var(--papel);
+    border: 1.5px solid var(--linea); border-radius: 10px; padding: .75rem .8rem;
+    min-height: 3rem; -webkit-appearance: none; appearance: none;
+  }
+  textarea { resize: vertical; min-height: 3rem; }
+  select {
+    background-image: linear-gradient(45deg, transparent 50%, var(--apagado) 50%), linear-gradient(135deg, var(--apagado) 50%, transparent 50%);
+    background-position: calc(100% - 1.1rem) 55%, calc(100% - .8rem) 55%;
+    background-size: .3rem .3rem; background-repeat: no-repeat; padding-right: 2rem;
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--tinta); box-shadow: 0 0 0 3px var(--tinta-suave); }
+  .invalido { border-color: var(--error) !important; }
+  .fila2 { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+  @media (max-width: 360px) { .fila2 { grid-template-columns: 1fr; } }
+
+  button { font: inherit; cursor: pointer; border-radius: 10px; min-height: 3rem; }
+  button:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; }
+  .btn-principal { width: 100%; background: var(--tinta); color: #fff; border: 0; font-weight: 700; padding: .85rem 1rem; }
+  .btn-secundario { background: var(--papel); color: var(--tinta); border: 1.5px solid var(--tinta); font-weight: 600; padding: .6rem 1rem; }
+  .btn-texto { background: none; border: 0; color: var(--tinta); font-weight: 600; padding: .5rem .25rem; min-height: 2.75rem; }
+  .btn-principal:active, .btn-secundario:active { transform: translateY(1px); }
+
+  /* Conceptos */
+  .concepto { border-top: 1px dashed var(--linea); padding-top: .9rem; margin-top: .9rem; }
+  .concepto:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+  .concepto-cab { display: flex; justify-content: space-between; align-items: center; margin-bottom: .35rem; }
+  .concepto-cab strong { font-size: .92rem; }
+  .quitar { color: var(--error); }
+  .dinero { position: relative; }
+  .dinero::before { content: "$"; position: absolute; left: .85rem; top: 50%; transform: translateY(-50%); color: var(--apagado); pointer-events: none; }
+  .dinero input { padding-left: 1.7rem; font-variant-numeric: tabular-nums; }
+  .total {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+    margin-top: 1rem; padding-top: .9rem; border-top: 2px solid var(--texto);
+  }
+  .total b { font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+  .total-letras { color: var(--apagado); font-size: .85rem; margin-top: .3rem; }
+
+  /* Firma: el elemento protagonista, un renglón de firma real */
+  .pliego {
+    position: relative; background: var(--papel); border: 1.5px solid var(--linea); border-radius: 12px;
+    height: 12rem; touch-action: none; overflow: hidden;
+  }
+  .pliego canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+  .pliego .renglon {
+    position: absolute; left: 1.25rem; right: 1.25rem; bottom: 2.6rem;
+    border-bottom: 1.5px solid var(--texto); pointer-events: none;
+  }
+  .pliego .equis { position: absolute; left: 1.3rem; bottom: 2.85rem; font-size: 1.1rem; color: var(--apagado); pointer-events: none; }
+  .pliego .pie { position: absolute; left: 1.25rem; bottom: .8rem; font-size: .85rem; color: var(--apagado); pointer-events: none; }
+  .pliego .vacio {
+    position: absolute; inset: 0 0 3rem; display: flex; align-items: center; justify-content: center;
+    color: var(--apagado); pointer-events: none; font-size: .95rem;
+  }
+  .pliego.firmado .vacio { display: none; }
+  .firma-acciones { display: flex; justify-content: space-between; align-items: center; margin-top: .4rem; }
+  .estado { font-size: .85rem; color: var(--apagado); }
+
+  /* Barra fija inferior */
+  .acciones {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+    background: rgba(238,241,245,.94); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border-top: 1px solid var(--linea);
+    padding: .75rem 1rem calc(.75rem + env(safe-area-inset-bottom, 0px));
+  }
+  .acciones .dentro { max-width: 34rem; margin: 0 auto; display: flex; gap: .6rem; }
+  .acciones .dentro > * { flex: 1; }
+
+  .aviso {
+    position: fixed; left: 1rem; right: 1rem; bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px)); z-index: 6;
+    max-width: 32rem; margin: 0 auto; background: var(--texto); color: #fff; border-radius: 10px;
+    padding: .8rem 1rem; font-size: .95rem; opacity: 0; transform: translateY(8px);
+    transition: opacity .2s, transform .2s; pointer-events: none;
+  }
+  .aviso.visible { opacity: 1; transform: none; }
+  .aviso.mal { background: var(--error); }
+  @media (prefers-reduced-motion: reduce) { .aviso { transition: none; } }
+
+  .oculto { display: none !important; }
+  .privacidad { font-size: .85rem; color: var(--apagado); margin-top: .25rem; }
+</style>
+</head>
+<body>
+
+<header class="barra">
+  <div>
+    <h1>Cuenta de cobro</h1>
+    <p id="saludo">Configura tus datos para empezar</p>
+  </div>
+  <button type="button" class="btn-texto" id="btn-mis-datos">Mis datos</button>
+</header>
+
+<main>
+  <!-- MIS DATOS: se guardan solo en este celular -->
+  <section class="hoja oculto" id="vista-datos" aria-labelledby="t-datos">
+    <h2 id="t-datos">Mis datos</h2>
+    <p class="ayuda">Aparecen en cada cuenta de cobro. Se guardan solo en este celular; no se envían a ningún servidor.</p>
+    <label class="campo"><span>Nombre completo</span>
+      <input id="d-nombre" autocomplete="name" autocapitalize="characters" placeholder="Nombre y apellidos"></label>
+    <div class="fila2">
+      <label class="campo"><span>Cédula</span>
+        <input id="d-cc" inputmode="numeric" placeholder="Número"></label>
+      <label class="campo"><span>Ciudad</span>
+        <input id="d-ciudad" placeholder="Bogotá" value="Bogotá"></label>
+    </div>
+    <label class="campo"><span>Banco</span>
+      <input id="d-banco" placeholder="Nombre del banco"></label>
+    <div class="fila2">
+      <label class="campo"><span>Tipo de cuenta</span>
+        <select id="d-tipo"><option value="ahorros">Ahorros</option><option value="corriente">Corriente</option></select></label>
+      <label class="campo"><span>Número de cuenta</span>
+        <input id="d-cuenta" inputmode="numeric" placeholder="Número"></label>
+    </div>
+    <label class="campo"><span>Próximo número de cuenta de cobro</span>
+      <input id="d-consecutivo" inputmode="numeric" placeholder="1"></label>
+    <button type="button" class="btn-principal" id="btn-guardar-datos">Guardar mis datos</button>
+    <p class="privacidad">Si borras los datos del navegador o cambias de celular, tendrás que ingresarlos otra vez.</p>
+  </section>
+
+  <!-- CUENTA DE COBRO -->
+  <div id="vista-cuenta" class="oculto">
+    <section class="hoja" aria-labelledby="t-cliente">
+      <h2 id="t-cliente">Cliente</h2>
+      <label class="campo"><span>Empresa o cliente</span>
+        <input id="c-empresa" autocapitalize="characters" placeholder="Ej.: AVIACOL S.A.S." list="clientes-previos"></label>
+      <datalist id="clientes-previos"></datalist>
+      <div class="fila2">
+        <label class="campo"><span>NIT</span>
+          <input id="c-nit" inputmode="numeric" placeholder="900.000.000-0"></label>
+        <label class="campo"><span>Cuenta No.</span>
+          <input id="c-numero" inputmode="numeric"></label>
+      </div>
+    </section>
+
+    <section class="hoja" aria-labelledby="t-conceptos">
+      <h2 id="t-conceptos">Conceptos</h2>
+      <div id="conceptos"></div>
+      <button type="button" class="btn-secundario" id="btn-agregar" style="width:100%;margin-top:1rem">Agregar concepto</button>
+      <div class="total"><span>Total</span><b id="total">$0</b></div>
+      <div class="total-letras" id="total-letras">CERO PESOS M/CTE</div>
+    </section>
+
+    <section class="hoja" aria-labelledby="t-firma">
+      <h2 id="t-firma">Firma</h2>
+      <p class="ayuda">Firma con el dedo sobre la línea. Queda guardada para las próximas cuentas.</p>
+      <div class="pliego" id="pliego">
+        <canvas id="lienzo" aria-label="Espacio para firmar"></canvas>
+        <div class="vacio">Firma aquí</div>
+        <span class="equis">✕</span>
+        <div class="renglon"></div>
+        <div class="pie" id="pie-firma">Firma</div>
+      </div>
+      <div class="firma-acciones">
+        <span class="estado" id="estado-firma">Sin firma</span>
+        <button type="button" class="btn-texto quitar" id="btn-borrar-firma">Borrar firma</button>
+      </div>
+    </section>
+  </div>
+</main>
+
+<div class="acciones oculto" id="barra-acciones">
+  <div class="dentro">
+    <button type="button" class="btn-principal" id="btn-compartir">Compartir PDF</button>
+    <button type="button" class="btn-secundario" id="btn-descargar">Descargar</button>
+  </div>
+</div>
+
+<div class="aviso" id="aviso" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------- Almacenamiento local (solo en este dispositivo) ---------- */
+  const K = { datos: 'cc.datos', firma: 'cc.firma', clientes: 'cc.clientes' };
+  const leer = (k, def) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch (e) { return def; } };
+  const guardar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
+
+  const $ = id => document.getElementById(id);
+  let datos = leer(K.datos, null);
+
+  function aviso(msg, mal) {
+    const a = $('aviso');
+    a.textContent = msg; a.classList.toggle('mal', !!mal); a.classList.add('visible');
+    clearTimeout(aviso.t); aviso.t = setTimeout(() => a.classList.remove('visible'), 3200);
+  }
+
+  /* ---------- Formato de dinero ---------- */
+  const soloDigitos = s => String(s || '').replace(/\D/g, '');
+  const aPesos = s => parseInt(soloDigitos(s), 10) || 0;
+  const conPuntos = n => n.toLocaleString('es-CO', { maximumFractionDigits: 0 });
+
+  /* ---------- Número a letras (español de Colombia) ---------- */
+  function numeroALetras(valor) {
+    const n = Math.round(Number(valor) || 0);
+    const U = ['CERO','UN','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE','DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISÉIS','DIECISIETE','DIECIOCHO','DIECINUEVE','VEINTE','VEINTIÚN','VEINTIDÓS','VEINTITRÉS','VEINTICUATRO','VEINTICINCO','VEINTISÉIS','VEINTISIETE','VEINTIOCHO','VEINTINUEVE'];
+    const D = ['','','','TREINTA','CUARENTA','CINCUENTA','SESENTA','SETENTA','OCHENTA','NOVENTA'];
+    const C = ['','CIENTO','DOSCIENTOS','TRESCIENTOS','CUATROCIENTOS','QUINIENTOS','SEISCIENTOS','SETECIENTOS','OCHOCIENTOS','NOVECIENTOS'];
+    function tres(x) {
+      if (x === 0) return '';
+      if (x === 100) return 'CIEN';
+      const c = Math.floor(x / 100), r = x % 100, p = [];
+      if (c) p.push(C[c]);
+      if (r) p.push(r < 30 ? U[r] : D[Math.floor(r / 10)] + (r % 10 ? ' Y ' + U[r % 10] : ''));
+      return p.join(' ');
+    }
+    function seis(x) {
+      const m = Math.floor(x / 1000), r = x % 1000, p = [];
+      if (m === 1) p.push('MIL'); else if (m > 1) p.push(tres(m) + ' MIL');
+      if (r) p.push(tres(r));
+      return p.join(' ');
+    }
+    if (n === 0) return 'CERO PESOS M/CTE';
+    if (n === 1) return 'UN PESO M/CTE';
+    if (n >= 1e12) return conPuntos(n) + ' PESOS M/CTE';
+    const mill = Math.floor(n / 1e6), resto = n % 1e6, p = [];
+    if (mill === 1) p.push('UN MILLÓN'); else if (mill > 1) p.push(seis(mill) + ' MILLONES');
+    if (resto) p.push(seis(resto));
+    return p.join(' ') + (mill > 0 && resto === 0 ? ' DE' : '') + ' PESOS M/CTE';
+  }
+
+  /* ---------- Vistas ---------- */
+  function mostrarDatos() {
+    $('vista-datos').classList.remove('oculto');
+    $('vista-cuenta').classList.add('oculto');
+    $('barra-acciones').classList.add('oculto');
+    $('btn-mis-datos').textContent = datos ? 'Volver' : 'Mis datos';
+    $('btn-mis-datos').classList.toggle('oculto', !datos);
+    const d = datos || {};
+    $('d-nombre').value = d.nombre || '';
+    $('d-cc').value = d.cc || '';
+    $('d-ciudad').value = d.ciudad || 'Bogotá';
+    $('d-banco').value = d.banco || '';
+    $('d-tipo').value = d.tipo || 'ahorros';
+    $('d-cuenta').value = d.cuenta || '';
+    $('d-consecutivo').value = d.consecutivo || 1;
+    window.scrollTo(0, 0);
+  }
+  function mostrarCuenta() {
+    $('vista-datos').classList.add('oculto');
+    $('vista-cuenta').classList.remove('oculto');
+    $('barra-acciones').classList.remove('oculto');
+    $('btn-mis-datos').textContent = 'Mis datos';
+    $('btn-mis-datos').classList.remove('oculto');
+    $('saludo').textContent = datos.nombre;
+    $('pie-firma').textContent = datos.nombre + ' · C.C. ' + datos.cc;
+    $('c-numero').value = datos.consecutivo || 1;
+    llenarClientes();
+    firma.ajustar();
+  }
+
+  $('btn-mis-datos').addEventListener('click', () => {
+    if ($('vista-datos').classList.contains('oculto')) mostrarDatos(); else if (datos) mostrarCuenta();
+  });
+
+  $('btn-guardar-datos').addEventListener('click', () => {
+    const campos = ['d-nombre', 'd-cc', 'd-banco', 'd-cuenta'];
+    let falta = false;
+    campos.forEach(id => { const vacio = !$(id).value.trim(); $(id).classList.toggle('invalido', vacio); falta = falta || vacio; });
+    if (falta) { aviso('Completa nombre, cédula, banco y número de cuenta.', true); return; }
+    datos = {
+      nombre: $('d-nombre').value.trim().toUpperCase(),
+      cc: $('d-cc').value.trim(),
+      ciudad: $('d-ciudad').value.trim() || 'Bogotá',
+      banco: $('d-banco').value.trim(),
+      tipo: $('d-tipo').value,
+      cuenta: $('d-cuenta').value.trim(),
+      consecutivo: aPesos($('d-consecutivo').value) || 1
+    };
+    if (!guardar(K.datos, datos)) { aviso('No se pudieron guardar los datos en este navegador.', true); return; }
+    aviso('Datos guardados.');
+    mostrarCuenta();
+  });
+
+  /* ---------- Clientes usados antes (autocompletar) ---------- */
+  function llenarClientes() {
+    const lista = leer(K.clientes, []);
+    $('clientes-previos').innerHTML = '';
+    lista.forEach(c => { const o = document.createElement('option'); o.value = c.empresa; $('clientes-previos').appendChild(o); });
+  }
+  $('c-empresa').addEventListener('change', () => {
+    const c = leer(K.clientes, []).find(x => x.empresa === $('c-empresa').value.trim().toUpperCase());
+    if (c && !$('c-nit').value) $('c-nit').value = c.nit;
+  });
+  function recordarCliente(empresa, nit) {
+    let lista = leer(K.clientes, []).filter(x => x.empresa !== empresa);
+    lista.unshift({ empresa, nit });
+    guardar(K.clientes, lista.slice(0, 20));
+  }
+
+  /* ---------- Conceptos ---------- */
+  function agregarConcepto(foco) {
+    const cont = $('conceptos');
+    const div = document.createElement('div');
+    div.className = 'concepto';
+    div.innerHTML =
+      '<div class="concepto-cab"><strong></strong>' +
+      '<button type="button" class="btn-texto quitar">Quitar</button></div>' +
+      '<label class="campo"><span>Descripción</span><textarea rows="2" class="desc" placeholder="Ej.: Honorarios por asesoría, septiembre"></textarea></label>' +
+      '<label class="campo" style="margin-bottom:0"><span>Valor</span><div class="dinero"><input class="valor" inputmode="numeric" placeholder="0"></div></label>';
+    cont.appendChild(div);
+    div.querySelector('.quitar').addEventListener('click', () => {
+      if (cont.children.length === 1) { div.querySelector('.desc').value = ''; div.querySelector('.valor').value = ''; }
+      else div.remove();
+      numerar(); recalcular();
+    });
+    const v = div.querySelector('.valor');
+    v.addEventListener('input', () => {
+      const n = aPesos(v.value);
+      v.value = n ? conPuntos(n) : '';
+      recalcular();
+    });
+    numerar();
+    if (foco) div.querySelector('.desc').focus();
+  }
+  function numerar() {
+    [...$('conceptos').children].forEach((d, i) => { d.querySelector('strong').textContent = 'Concepto ' + (i + 1); });
+  }
+  function conceptos() {
+    return [...$('conceptos').children].map(d => ({
+      desc: d.querySelector('.desc').value.trim(),
+      valor: aPesos(d.querySelector('.valor').value)
+    })).filter(c => c.desc || c.valor);
+  }
+  function recalcular() {
+    const t = conceptos().reduce((s, c) => s + c.valor, 0);
+    $('total').textContent = '$' + conPuntos(t);
+    $('total-letras').textContent = numeroALetras(t);
+    return t;
+  }
+  $('btn-agregar').addEventListener('click', () => agregarConcepto(true));
+
+  /* ---------- Firma con el dedo ---------- */
+  const firma = (function () {
+    const pliego = $('pliego'), lienzo = $('lienzo'), ctx = lienzo.getContext('2d');
+    let dibujando = false, ultimo = null, hayTrazo = false;
+
+    function estado() {
+      pliego.classList.toggle('firmado', hayTrazo);
+      $('estado-firma').textContent = hayTrazo ? 'Firma guardada en este celular' : 'Sin firma';
+    }
+    function pincel() {
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.strokeStyle = '#1F3A93'; ctx.lineWidth = 2.6;
+    }
+    function ajustar() {
+      const r = pliego.getBoundingClientRect();
+      if (!r.width) return;
+      const dpr = Math.max(window.devicePixelRatio || 1, 2);
+      lienzo.width = Math.round(r.width * dpr);
+      lienzo.height = Math.round(r.height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      pincel();
+      const guardada = leer(K.firma, null);
+      hayTrazo = false;
+      if (guardada && guardada.png) {
+        const img = new Image();
+        img.onload = () => {
+          // Se redibuja proporcional al ancho actual (sirve al girar el celular)
+          const w = guardada.w, h = guardada.h, esc = r.width / guardada.anchoLienzo;
+          ctx.drawImage(img, guardada.x * esc, guardada.y * esc, w * esc, h * esc);
+          hayTrazo = true; estado();
+        };
+        img.src = guardada.png;
+      }
+      estado();
+    }
+    function punto(e) {
+      const r = lienzo.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    }
+    lienzo.addEventListener('pointerdown', e => {
+      e.preventDefault(); lienzo.setPointerCapture(e.pointerId);
+      dibujando = true; ultimo = punto(e);
+      ctx.beginPath(); ctx.arc(ultimo.x, ultimo.y, ctx.lineWidth / 2, 0, Math.PI * 2); ctx.fillStyle = ctx.strokeStyle; ctx.fill();
+    });
+    lienzo.addEventListener('pointermove', e => {
+      if (!dibujando) return;
+      e.preventDefault();
+      const eventos = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+      eventos.forEach(ev => {
+        const p = punto(ev);
+        ctx.beginPath(); ctx.moveTo(ultimo.x, ultimo.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+        ultimo = p;
+      });
+      hayTrazo = true;
+    });
+    const terminar = () => { if (!dibujando) return; dibujando = false; persistir(); estado(); };
+    lienzo.addEventListener('pointerup', terminar);
+    lienzo.addEventListener('pointercancel', terminar);
+
+    // Recorta el área firmada y la guarda como PNG transparente
+    function recorte() {
+      const { width: W, height: H } = lienzo;
+      const px = ctx.getImageData(0, 0, W, H).data;
+      let x0 = W, y0 = H, x1 = -1, y1 = -1;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        if (px[(y * W + x) * 4 + 3] > 10) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+      }
+      if (x1 < 0) return null;
+      const m = 6; x0 = Math.max(0, x0 - m); y0 = Math.max(0, y0 - m); x1 = Math.min(W - 1, x1 + m); y1 = Math.min(H - 1, y1 + m);
+      const w = x1 - x0 + 1, h = y1 - y0 + 1;
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      c.getContext('2d').drawImage(lienzo, x0, y0, w, h, 0, 0, w, h);
+      const dpr = W / lienzo.getBoundingClientRect().width;
+      return { png: c.toDataURL('image/png'), x: x0 / dpr, y: y0 / dpr, w: w / dpr, h: h / dpr, anchoLienzo: W / dpr, pxW: w, pxH: h };
+    }
+    function persistir() {
+      const r = recorte();
+      if (r) guardar(K.firma, r); else localStorage.removeItem(K.firma);
+    }
+    function borrar() {
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, lienzo.width, lienzo.height); ctx.restore();
+      hayTrazo = false; try { localStorage.removeItem(K.firma); } catch (e) {}
+      estado();
+    }
+    $('btn-borrar-firma').addEventListener('click', borrar);
+    let t; window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(ajustar, 150); });
+    return { ajustar, obtener: () => leer(K.firma, null), tiene: () => hayTrazo };
+  })();
+
+  /* ---------- Construcción del PDF ---------- */
+  function fechaLarga(d) {
+    return d.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' });
+  }
+
+  function crearPDF() {
+    const empresa = $('c-empresa').value.trim().toUpperCase();
+    const nit = $('c-nit').value.trim();
+    const numero = $('c-numero').value.trim();
+    const items = conceptos();
+    const total = items.reduce((s, c) => s + c.valor, 0);
+
+    $('c-empresa').classList.toggle('invalido', !empresa);
+    if (!empresa) { aviso('Escribe el nombre del cliente.', true); $('c-empresa').focus(); return null; }
+    if (!items.length || total <= 0) { aviso('Agrega al menos un concepto con valor.', true); return null; }
+    if (items.some(c => !c.desc)) { aviso('Hay un concepto con valor pero sin descripción.', true); return null; }
+    if (!firma.tiene() && !confirm('La cuenta no tiene firma. ¿Generarla de todas formas?')) return null;
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+    const AN = 215.9, AL = 279.4, M = 22, UTIL = AN - 2 * M;
+    let y = 28;
+    const salto = (alto) => { if (y + alto > AL - 14) { doc.addPage(); y = 24; } };
+    const texto = (t, x, opts) => doc.text(t, x, y, opts);
+
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
+    texto('CUENTA DE COBRO', AN / 2, { align: 'center' });
+    if (numero) { y += 6; doc.setFont('helvetica', 'normal'); doc.setFontSize(10); texto('No. ' + numero, AN / 2, { align: 'center' }); }
+
+    y += 14; doc.setFontSize(11); doc.setFont('helvetica', 'normal');
+    texto(datos.ciudad + ', ' + fechaLarga(new Date()), AN - M, { align: 'right' });
+
+    y += 16; doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
+    const lEmp = doc.splitTextToSize(empresa, UTIL);
+    doc.text(lEmp, M, y); y += lEmp.length * 5.5;
+    if (nit) { doc.setFont('helvetica', 'normal'); doc.setFontSize(11); texto('NIT. ' + nit, M); y += 5; }
+
+    y += 12; doc.setFont('helvetica', 'bolditalic'); doc.setFontSize(12); texto('DEBE A:', M);
+    y += 7; doc.setFont('helvetica', 'normal'); texto(datos.nombre, M);
+    y += 6; texto('C.C. ' + datos.cc, M);
+
+    y += 14; texto('LA SUMA DE:', M);
+    y += 6; doc.setFont('helvetica', 'bold');
+    const lSuma = doc.splitTextToSize(numeroALetras(total) + ' ($' + conPuntos(total) + ')', UTIL);
+    doc.text(lSuma, M, y); y += lSuma.length * 5.5;
+
+    y += 9; doc.setFont('helvetica', 'normal'); texto('POR CONCEPTO DE:', M); y += 4;
+
+    // Tabla
+    const colV = 45, colD = UTIL - colV, pad = 3, lh = 5;
+    doc.setFontSize(11); doc.setLineWidth(0.3); doc.setDrawColor(0);
+    items.forEach(c => {
+      const lineas = doc.splitTextToSize(c.desc || '—', colD - 2 * pad);
+      const alto = Math.max(lineas.length * lh, lh) + 2 * pad;
+      salto(alto);
+      doc.rect(M, y, colD, alto); doc.rect(M + colD, y, colV, alto);
+      doc.text(lineas, M + pad, y + pad + 3.6);
+      doc.text('$' + conPuntos(c.valor), M + UTIL - pad, y + pad + 3.6, { align: 'right' });
+      y += alto;
+    });
+    salto(11);
+    doc.setFillColor(242, 242, 242); doc.rect(M, y, UTIL, 11, 'FD'); doc.line(M + colD, y, M + colD, y + 11);
+    doc.setFont('helvetica', 'bold');
+    doc.text('TOTAL CUENTA DE COBRO', M + colD - pad, y + 7.2, { align: 'right' });
+    doc.text('$' + conPuntos(total), M + UTIL - pad, y + 7.2, { align: 'right' });
+    y += 11;
+
+    // Datos de pago
+    y += 12; doc.setFont('helvetica', 'italic'); doc.setFontSize(10.5);
+    const pago = 'Favor consignar el valor en la cuenta de ' + datos.tipo + ' ' + datos.banco + ' No. ' + datos.cuenta + ' a nombre de ' + datos.nombre + '.';
+    const lPago = doc.splitTextToSize(pago, UTIL - 8);
+    const altoPago = lPago.length * 5 + 5;
+    salto(altoPago);
+    doc.setDrawColor(200); doc.setFillColor(248, 248, 248); doc.rect(M, y, UTIL, altoPago, 'FD');
+    doc.text(lPago, M + 4, y + 6.5); y += altoPago;
+
+    // Firma
+    const f = firma.obtener();
+    const anchoLinea = 75, altoFirma = 24;
+    salto(altoFirma + 26);
+    y += 14;
+    if (f && f.png) {
+      let w = anchoLinea, h = w * f.pxH / f.pxW;
+      if (h > altoFirma) { h = altoFirma; w = h * f.pxW / f.pxH; }
+      doc.addImage(f.png, 'PNG', M, y + altoFirma - h, w, h);
+    }
+    y += altoFirma + 1;
+    doc.setDrawColor(0); doc.setLineWidth(0.3); doc.line(M, y, M + anchoLinea, y);
+    y += 5.5; doc.setFont('helvetica', 'bold'); doc.setFontSize(11); texto(datos.nombre, M);
+    y += 5; doc.setFont('helvetica', 'normal'); texto('C.C. ' + datos.cc, M);
+
+    const limpio = empresa.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9Ñ]+/gi, '_').replace(/^_|_$/g, '') || 'Cliente';
+    const nombre = 'Cuenta_Cobro_' + (numero ? numero + '_' : '') + limpio + '.pdf';
+    return { doc, nombre, empresa, nit, numero };
+  }
+
+  function despuesDeGenerar(r) {
+    recordarCliente(r.empresa, r.nit);
+    const n = aPesos(r.numero);
+    if (n && n >= (datos.consecutivo || 1)) {
+      datos.consecutivo = n + 1; guardar(K.datos, datos);
+    }
+  }
+
+  $('btn-descargar').addEventListener('click', () => {
+    const r = crearPDF(); if (!r) return;
+    r.doc.save(r.nombre);
+    despuesDeGenerar(r);
+    aviso('PDF descargado.');
+  });
+
+  $('btn-compartir').addEventListener('click', async () => {
+    const r = crearPDF(); if (!r) return;
+    const archivo = new File([r.doc.output('blob')], r.nombre, { type: 'application/pdf' });
+    if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+      try {
+        await navigator.share({ files: [archivo], title: 'Cuenta de cobro' });
+        despuesDeGenerar(r);
+      } catch (e) {
+        if (e.name !== 'AbortError') { r.doc.save(r.nombre); despuesDeGenerar(r); aviso('No se pudo compartir; se descargó el PDF.'); }
+      }
+    } else {
+      r.doc.save(r.nombre); despuesDeGenerar(r);
+      aviso('Este navegador no permite compartir archivos; se descargó el PDF.');
+    }
+  });
+
+  /* ---------- Inicio ---------- */
+  agregarConcepto(false);
+  if (datos) mostrarCuenta(); else mostrarDatos();
+
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
